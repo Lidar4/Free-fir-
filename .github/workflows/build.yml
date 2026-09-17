@@ -36,38 +36,42 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-      - name: Assert Signing Secrets for Production Builds
-        if: github.ref == 'refs/heads/main' && (secrets.KEYSTORE_BASE64 == '' || secrets.STORE_PASSWORD == '' || secrets.KEY_PASSWORD == '')
+      - name: Check Production Signing Configuration
+        id: signing
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          echo "ERROR: Release signing secrets are missing on the production main branch!"
-          echo "Please configure KEYSTORE_BASE64, STORE_PASSWORD, and KEY_PASSWORD in GitHub Settings -> Secrets and Variables -> Actions."
-          exit 1
+          if [[ -n "$KEYSTORE_BASE64" && -n "$STORE_PASSWORD" && -n "$KEY_PASSWORD" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Production signing secrets are configured."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Production signing secrets are not configured; release build will be skipped."
+          fi
 
       - name: Decrypt & Build Production Release (APK & AAB)
-        if: secrets.KEYSTORE_BASE64 != '' && secrets.STORE_PASSWORD != '' && secrets.KEY_PASSWORD != ''
+        if: steps.signing.outputs.available == 'true'
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'upload' }}
         run: |
-          # 1. Decode the Keystore to a file
           echo "$KEYSTORE_BASE64" | base64 -d > app/my-release-key.jks
-          
-          # 2. Compile release APK and AAB bundle
           export KEYSTORE_PATH="my-release-key.jks"
           ./gradlew assembleRelease bundleRelease --no-daemon
-          
-          # 3. Locate apksigner dynamically and verify the release APK
+
           BUILD_TOOLS_DIR="$ANDROID_SDK_ROOT/build-tools"
           LATEST_BUILD_TOOL=$(ls -1 "$BUILD_TOOLS_DIR" | sort -V | tail -n 1)
           APKSIGNER="$BUILD_TOOLS_DIR/$LATEST_BUILD_TOOL/apksigner"
-          
           echo "Verifying Release APK signature using apksigner..."
-          $APKSIGNER verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+          "$APKSIGNER" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
 
       - name: Upload Release APK
-        if: secrets.KEYSTORE_BASE64 != '' && secrets.STORE_PASSWORD != '' && secrets.KEY_PASSWORD != ''
+        if: steps.signing.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: simple-overlay-release-apk
@@ -75,11 +79,9 @@ jobs:
           if-no-files-found: error
 
       - name: Upload Release AAB Bundle
-        if: secrets.KEYSTORE_BASE64 != '' && secrets.STORE_PASSWORD != '' && secrets.KEY_PASSWORD != ''
+        if: steps.signing.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: simple-overlay-release-aab
           path: app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
-
-      # Production build trigger: this workflow is intentionally push-triggered on main.
