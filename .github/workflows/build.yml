@@ -7,6 +7,9 @@ on:
     branches: [ "main", "master", "develop" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build & Verify Android App
@@ -21,13 +24,29 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'gradle'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          yes | sdkmanager --licenses > /dev/null || true
 
       - name: Grant Execute Permission to Gradlew
-        run: chmod +x gradlew
+        run: chmod +x ./gradlew
+
+      - name: Validate Gradle Wrapper
+        run: ./gradlew --version --no-daemon
 
       - name: Build Debug APK
-        run: ./gradlew clean assembleDebug --no-daemon
+        run: ./gradlew clean assembleDebug --no-daemon --stacktrace
+
+      - name: Verify Debug APK exists
+        run: |
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
@@ -62,12 +81,11 @@ jobs:
         run: |
           echo "$KEYSTORE_BASE64" | base64 -d > app/my-release-key.jks
           export KEYSTORE_PATH="my-release-key.jks"
-          ./gradlew assembleRelease bundleRelease --no-daemon
+          ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
 
           BUILD_TOOLS_DIR="$ANDROID_SDK_ROOT/build-tools"
           LATEST_BUILD_TOOL=$(ls -1 "$BUILD_TOOLS_DIR" | sort -V | tail -n 1)
           APKSIGNER="$BUILD_TOOLS_DIR/$LATEST_BUILD_TOOL/apksigner"
-          echo "Verifying Release APK signature using apksigner..."
           "$APKSIGNER" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
 
       - name: Upload Release APK
