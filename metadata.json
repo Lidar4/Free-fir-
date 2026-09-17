@@ -1,6 +1,6 @@
 {
   "name": "Overlay Menu",
-  "description": "A simple overlay floating menu application for Android learning and experiments.",
+  "description": "An interactive floating training overlay menu companion for tracking gameplay practice drills, sessions, and statistics.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

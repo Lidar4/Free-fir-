@@ -21,21 +21,35 @@ android {
   }
 
   signingConfigs {
-    create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+    val keystorePath = System.getenv("KEYSTORE_PATH")
+    val storePassword = System.getenv("STORE_PASSWORD")
+    val keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
+    val keyPassword = System.getenv("KEY_PASSWORD")
+
+    if (!keystorePath.isNullOrEmpty() && !storePassword.isNullOrEmpty() && !keyPassword.isNullOrEmpty()) {
+      create("release") {
+        storeFile = file(keystorePath)
+        this.storePassword = storePassword
+        this.keyAlias = keyAlias
+        this.keyPassword = keyPassword
+      }
     }
   }
 
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      isMinifyEnabled = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      
+      val releaseConfig = signingConfigs.findByName("release")
+      if (releaseConfig != null) {
+        signingConfig = releaseConfig
+      } else {
+        if (System.getenv("CI") == "true") {
+          throw GradleException("Release signing configuration secrets (KEYSTORE_PATH, STORE_PASSWORD, KEY_PASSWORD) are missing for a CI production release build!")
+        }
+      }
     }
     debug {
       // Use Android's default built-in debug signing behavior
